@@ -327,47 +327,7 @@ fn main() {
     let vao = gl.gen_vertex_arrays(1)[0];
     gl.bind_vertex_array(vao);
 
-
-
-
-    /*
-    let texture_count = 14;
-
-    let data = [0u8; 30000];
-
-    let TEXTURE_WIDTH = 800;
-    let TEXTURE_HEIGHT = 800;
-
-    let i = 0;
-    let k = gl.texture_range_apple(gl::TEXTURE_RECTANGLE_ARB, &data[..]);
-
-    let tex_offset = 0;
-    let target = gl::TEXTURE_2D;
-    let textures = gl.gen_textures(texture_count);
-    for tex in &textures {
-        gl.bind_texture(target, *tex);
-        gl.tex_parameter_i(target, gl::TEXTURE_STORAGE_HINT_APPLE , gl::STORAGE_CACHED_APPLE as gl::GLint);
-        gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
-
-        // Rectangle textures has its limitations compared to using POT textures, for example,
-        // Rectangle textures can't use mipmap filtering
-        gl.tex_parameter_i(target, gl::TEXTURE_MIN_FILTER, gl::NEAREST as gl::GLint);
-        gl.tex_parameter_i(target, gl::TEXTURE_MAG_FILTER, gl::NEAREST as gl::GLint);
-
-        // Rectangle textures can't use the GL_REPEAT warp mode
-        gl.tex_parameter_i(target, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::GLint);
-        gl.tex_parameter_i(target, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::GLint);
-
-        gl.pixel_store_i(gl::UNPACK_ROW_LENGTH, 0);
-
-        gl.tex_image_2d(target, 0, gl::RGBA as gl::GLint, TEXTURE_WIDTH, TEXTURE_HEIGHT, 0,
-                        gl::BGRA, gl::UNSIGNED_INT_8_8_8_8_REV,
-                        Some(&data[(TEXTURE_WIDTH * TEXTURE_HEIGHT * 4 * (i + tex_offset)) as usize..]));
-
-
-
-    }*/
-
+    
     let mut running = true;
     let mut cube_rotation: f32 = 0.;
     while running {
@@ -382,41 +342,6 @@ fn main() {
             }
         });
 
-
-        /*
-
-        for tex in &textures {
-      /*n tex_buffer(&self, target: GLenum, internal_format: GLenum, buffer: GLuint) {
-      unsafe {
-          self.ffi_gl_.TexBuffer(target, internal_format, buffer);
-      }
-  }*/
-      gl.bind_texture(gl::TEXTURE_RECTANGLE_ARB, *tex);
-
-
-      gl.tex_parameter_i(target, gl::TEXTURE_STORAGE_HINT_APPLE, gl::STORAGE_CACHED_APPLE as gl::GLint);
-      gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
-      gl.tex_sub_image_2d(target, 0, 0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT,
-                          gl::BGRA, gl::UNSIGNED_INT_8_8_8_8_REV,
-                          &data[(TEXTURE_WIDTH * TEXTURE_HEIGHT * 4 * (i + tex_offset)) as usize..]);
-  }
-
-  for tex in &textures {
-      /*n tex_buffer(&self, target: GLenum, internal_format: GLenum, buffer: GLuint) {
-      unsafe {
-          self.ffi_gl_.TexBuffer(target, internal_format, buffer);
-      }
-  }*/
-      /*
-      gl.bind_texture(gl::TEXTURE_RECTANGLE_ARB, *tex);
-
-
-      gl.tex_parameter_i(gl::TEXTURE_RECTANGLE_ARB, gl::TEXTURE_STORAGE_HINT_APPLE, gl::STORAGE_CACHED_APPLE as gl::GLint);
-      gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
-      gl.tex_sub_image_2d(gl::TEXTURE_RECTANGLE_ARB, 0, 0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT,
-                          gl::BGRA, gl::UNSIGNED_INT_8_8_8_8_REV,
-                          &data[(TEXTURE_WIDTH * TEXTURE_HEIGHT * 4 * (i + tex_offset)) as usize..]);*/
-  }*/
 
         // Bind the texture to texture unit 0
         gl.bind_texture(texture_target, texture);
