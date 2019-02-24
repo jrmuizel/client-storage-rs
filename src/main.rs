@@ -38,7 +38,7 @@ struct Buffers {
     indices: GLuint
 }
 
-fn init_buffers(gl: &mut gl::Gl) -> Buffers {
+fn init_buffers(gl: &mut gl::Gl, texture_rectangle: bool, texture_width: i32, texture_height: i32) -> Buffers {
     let position_buffer = gl.gen_buffers(1)[0];
 
     gl.bind_buffer(gl::ARRAY_BUFFER, position_buffer);
@@ -89,38 +89,40 @@ fn init_buffers(gl: &mut gl::Gl) -> Buffers {
 
     gl.bind_buffer(gl::ARRAY_BUFFER, texture_coord_buffer);
 
+    let width = if texture_rectangle { texture_width as f32 } else { 1.0 };
+    let height = if texture_rectangle { texture_height as f32 } else { 1.0 };
 
     let texture_coordinates = [
         // Front
         0.0f32,  0.0,
-        1.0,  0.0,
-        1.0,  1.0,
-        0.0,  1.0,
+        width,  0.0,
+        width,  height,
+        0.0,  height,
         // Back
         0.0,  0.0,
-        1.0,  0.0,
-        1.0,  1.0,
-        0.0,  1.0,
+        width,  0.0,
+        width,  height,
+        0.0,  height,
         // Top
         0.0,  0.0,
-        1.0,  0.0,
-        1.0,  1.0,
-        0.0,  1.0,
+        width,  0.0,
+        width,  height,
+        0.0,  height,
         // Bottom
         0.0,  0.0,
-        1.0,  0.0,
-        1.0,  1.0,
-        0.0,  1.0,
+        width,  0.0,
+        width,  height,
+        0.0,  height,
         // Right
         0.0,  0.0,
-        1.0,  0.0,
-        1.0,  1.0,
-        0.0,  1.0,
+        width,  0.0,
+        width,  height,
+        0.0,  height,
         // Left
         0.0,  0.0,
-        1.0,  0.0,
-        1.0,  1.0,
-        0.0,  1.0,
+        width,  0.0,
+        width,  height,
+        0.0,  height,
     ];
 
     gl.buffer_data_untyped(gl::ARRAY_BUFFER, std::mem::size_of_val(&texture_coordinates) as isize, texture_coordinates.as_ptr() as *const libc::c_void, gl::STATIC_DRAW);
@@ -157,26 +159,59 @@ fn init_buffers(gl: &mut gl::Gl) -> Buffers {
     }
 }
 
-fn load_texture(gl: &mut gl::Gl) -> GLuint {
-    let texture = gl.gen_textures(1)[0];
+struct Image {
+    data: Vec<u8>,
+    width: i32,
+    height: i32
+}
 
-    gl.bind_texture(gl::TEXTURE_2D, texture);
-
-    let decoder = png::Decoder::new(std::fs::File::open("cubetexture.png").unwrap());
+fn load_image() -> Image
+{
+    {
+        let width: i32 = 4096;
+        let height: i32 = 8192;
+        return Image { data: vec![0; (width * height * 4) as usize], width, height }
+    }
+    let decoder = png::Decoder::new(std::fs::File::open("sprite-sheet.png").unwrap());
     let (info, mut reader) = decoder.read_info().unwrap();
     // Allocate the output buffer.
     let mut buf = vec![0; info.buffer_size()];
     // Read the next frame. Currently this function should only called once.
     // The default options
     reader.next_frame(&mut buf).unwrap();
-    let level = 0;
-    let internal_format = gl::RGBA;
-    let src_format = gl::RGBA;
-    let src_type = gl::UNSIGNED_BYTE;
-    let border = 0;
-    gl.tex_image_2d(gl::TEXTURE_2D, level, internal_format as i32, info.width as i32, info.height as i32, border, src_format, src_type, Some(&buf[..]));
 
-    gl.tex_parameter_i(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+    Image { data: buf, width: info.width as i32, height: info.height as i32}
+}
+
+
+fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format: GLuint, src_format: GLuint, src_type: GLuint, client_storage: bool) -> GLuint {
+    let texture = gl.gen_textures(1)[0];
+
+    gl.bind_texture(target, texture);
+
+    let level = 0;
+    let border = 0;
+
+    if client_storage {
+        //gl.texture_range_apple(target, &image.data[..]);
+
+        gl.tex_parameter_i(target, gl::TEXTURE_STORAGE_HINT_APPLE, gl::STORAGE_CACHED_APPLE as gl::GLint);
+        gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
+
+        // this may not be needed
+        gl.pixel_store_i(gl::UNPACK_ROW_LENGTH, 0);
+    }
+
+
+    gl.tex_image_2d(target, level, internal_format as i32, image.width, image.height, border, src_format, src_type, Some(&image.data[..]));
+
+    // Rectangle textures has its limitations compared to using POT textures, for example,
+    // Rectangle textures can't use mipmap filtering
+    gl.tex_parameter_i(target, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+
+    // Rectangle textures can't use the GL_REPEAT warp mode
+    gl.tex_parameter_i(target, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::GLint);
+    gl.tex_parameter_i(target, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::GLint);
     texture
 }
 
@@ -212,6 +247,17 @@ fn main() {
         gl_window.make_current().unwrap();
     }
 
+
+    let texture_rectangle = true;
+    let apple_format = true;
+    let client_storage = true;
+
+    let texture_target = if texture_rectangle { gl::TEXTURE_RECTANGLE_ARB } else { gl::TEXTURE_2D };
+    let texture_internal_format = gl::RGBA;
+    let texture_src_format = if apple_format { gl::BGRA } else { gl::RGBA };
+    let texture_src_type = if apple_format { gl::UNSIGNED_INT_8_8_8_8_REV } else { gl::UNSIGNED_BYTE };
+
+
     let vs_source = b"
     #version 140
 
@@ -225,16 +271,30 @@ fn main() {
         v_texture_coord = a_texture_coord;
     }";
 
-    let fs_source = b"
+    let fs_source = if texture_rectangle {
+        b"
     #version 140
 
     in vec2 v_texture_coord;
-    uniform sampler2D u_sampler;
+    uniform sampler2DRect u_sampler;
     out vec4 fragment_color;
     void main(void) {
         fragment_color = texture(u_sampler, v_texture_coord);
     }
-    ";
+    "
+    } else {
+            b"
+    #version 140
+
+    in vec2 v_texture_coord;
+    uniform sampler2D     u_sampler;
+    out vec4 fragment_color;
+    void main(void) {
+        fragment_color = texture(u_sampler, v_texture_coord);
+    }
+    "
+    };
+
 
     let mut glc = unsafe { gl::GlFns::load_with(|symbol| gl_window.get_proc_address(symbol) as *const _) };
     let gl = Rc::get_mut(&mut glc).unwrap();
@@ -249,9 +309,20 @@ fn main() {
     let model_view_matrix_loc = gl.get_uniform_location(shader_program, "u_model_view_matrix");
     let u_sampler = gl.get_uniform_location(shader_program, "u_sampler");
 
-    let buffers = init_buffers(gl);
 
-    let texture = load_texture(gl);
+    let image = load_image();
+    let buffers = init_buffers(gl, texture_rectangle, image.width, image.height);
+
+
+
+
+
+    let texture = load_texture(gl, &image,
+                               texture_target,
+                               texture_internal_format,
+                               texture_src_format,
+                               texture_src_type,
+                               client_storage);
 
     let vao = gl.gen_vertex_arrays(1)[0];
     gl.bind_vertex_array(vao);
@@ -347,6 +418,19 @@ fn main() {
                           &data[(TEXTURE_WIDTH * TEXTURE_HEIGHT * 4 * (i + tex_offset)) as usize..]);*/
   }*/
 
+        // Bind the texture to texture unit 0
+        gl.bind_texture(texture_target, texture);
+
+        {
+            let level = 0;
+            if client_storage {
+                //gl.tex_parameter_i(texture_target, gl::TEXTURE_STORAGE_HINT_APPLE, gl::STORAGE_CACHED_APPLE as gl::GLint);
+                //gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
+            }
+            gl.tex_sub_image_2d(texture_target, level, 0, 0, image.width, image.height, texture_src_format, texture_src_type, &image.data[..]);
+        }
+
+
         gl.clear_color(1., 0., 0., 1.);
         gl.clear_depth(1.);
         gl.enable(gl::DEPTH_TEST);
@@ -427,8 +511,6 @@ fn main() {
         // Tell OpenGL we want to affect texture unit 0
         gl.active_texture(gl::TEXTURE0);
 
-        // Bind the texture to texture unit 0
-        gl.bind_texture(gl::TEXTURE_2D, texture);
 
         gl.uniform_1i(u_sampler, 0);
 
