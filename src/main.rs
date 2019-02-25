@@ -12,6 +12,11 @@ use std::rc::Rc;
 
 use gleam::gl::GLuint;
 
+struct Options {
+    pbo: bool,
+    client_storage: bool,
+}
+
 
 fn init_shader_program(gl: &mut gl::Gl, vs_source: &[u8], fs_source: &[u8]) -> gl::GLuint {
     let vertex_shader = load_shader(gl, gl::VERTEX_SHADER, vs_source);
@@ -167,12 +172,12 @@ struct Image {
 
 fn load_image() -> Image
 {
-    {
+    if false {
         let width: i32 = 4096;
         let height: i32 = 8192;
         return Image { data: vec![0; (width * height * 4) as usize], width, height }
     }
-    let decoder = png::Decoder::new(std::fs::File::open("sprite-sheet.png").unwrap());
+    let decoder = png::Decoder::new(std::fs::File::open("cubetexture.png").unwrap());
     let (info, mut reader) = decoder.read_info().unwrap();
     // Allocate the output buffer.
     let mut buf = vec![0; info.buffer_size()];
@@ -183,27 +188,38 @@ fn load_image() -> Image
     Image { data: buf, width: info.width as i32, height: info.height as i32}
 }
 
+struct Texture {
+    id: GLuint,
+    pbo: Option<GLuint>,
+}
 
-fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format: GLuint, src_format: GLuint, src_type: GLuint, client_storage: bool) -> GLuint {
+
+fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format: GLuint, src_format: GLuint, src_type: GLuint, options: &Options) -> Texture {
     let texture = gl.gen_textures(1)[0];
 
     gl.bind_texture(target, texture);
 
+
+
     let level = 0;
     let border = 0;
 
-    if client_storage {
+    if options.client_storage {
         //gl.texture_range_apple(target, &image.data[..]);
 
-        gl.tex_parameter_i(target, gl::TEXTURE_STORAGE_HINT_APPLE, gl::STORAGE_CACHED_APPLE as gl::GLint);
+        // both of these seem to work ok on Intel
+        let storage = gl::STORAGE_SHARED_APPLE;
+        let storage = gl::STORAGE_CACHED_APPLE;
+        gl.tex_parameter_i(target, gl::TEXTURE_STORAGE_HINT_APPLE, storage as gl::GLint);
         gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
 
         // this may not be needed
         gl.pixel_store_i(gl::UNPACK_ROW_LENGTH, 0);
     }
 
+    let zero = vec![0; image.data.len()];
 
-    gl.tex_image_2d(target, level, internal_format as i32, image.width, image.height, border, src_format, src_type, Some(&image.data[..]));
+    gl.tex_image_2d(target, level, internal_format as i32, image.width, image.height, border, src_format, src_type, if false { Some(&zero[..]) } else { Some(&zero[..]) });
 
     // Rectangle textures has its limitations compared to using POT textures, for example,
     // Rectangle textures can't use mipmap filtering
@@ -212,7 +228,29 @@ fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format:
     // Rectangle textures can't use the GL_REPEAT warp mode
     gl.tex_parameter_i(target, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::GLint);
     gl.tex_parameter_i(target, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::GLint);
-    texture
+
+    let pbo = if options.pbo {
+        let id = gl.gen_buffers(1)[0];
+        // WebRender on Mac uses DYNAMIC_DRAW
+        gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, id);
+        gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * 4) as _, zero[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
+        gl.tex_sub_image_2d_pbo(
+            target,
+            level,
+            0,
+            0,
+            image.width,
+            image.height,
+            src_format,
+            src_type,
+            0,
+        );
+        gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, 0);
+        Some(id)
+    } else {
+        None
+    };
+    Texture { id: texture, pbo }
 }
 
 
@@ -316,18 +354,19 @@ fn main() {
 
 
 
+    let options = Options { pbo: false, client_storage: true};
 
     let texture = load_texture(gl, &image,
                                texture_target,
                                texture_internal_format,
                                texture_src_format,
                                texture_src_type,
-                               client_storage);
+                               &options);
 
     let vao = gl.gen_vertex_arrays(1)[0];
     gl.bind_vertex_array(vao);
 
-    
+
     let mut running = true;
     let mut cube_rotation: f32 = 0.;
     while running {
@@ -344,15 +383,33 @@ fn main() {
 
 
         // Bind the texture to texture unit 0
-        gl.bind_texture(texture_target, texture);
+        gl.bind_texture(texture_target, texture.id);
 
         {
             let level = 0;
-            if client_storage {
-                //gl.tex_parameter_i(texture_target, gl::TEXTURE_STORAGE_HINT_APPLE, gl::STORAGE_CACHED_APPLE as gl::GLint);
-                //gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
+            if options.pbo {
+                let id = texture.pbo.unwrap();
+                gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, id);
+                gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * 4) as _, image.data[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
+                gl.tex_sub_image_2d_pbo(
+                    texture_target,
+                    level,
+                    0,
+                    0,
+                    image.width,
+                    image.height,
+                    texture_src_format,
+                    texture_src_type,
+                    0,
+                );
+                gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, 0);
+            } else {
+                if client_storage {
+                    //gl.tex_parameter_i(texture_target, gl::TEXTURE_STORAGE_HINT_APPLE, gl::STORAGE_CACHED_APPLE as gl::GLint);
+                    //gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
+                }
+                gl.tex_sub_image_2d(texture_target, level, 0, 0, image.width, image.height, texture_src_format, texture_src_type, &image.data[..]);
             }
-            gl.tex_sub_image_2d(texture_target, level, 0, 0, image.width, image.height, texture_src_format, texture_src_type, &image.data[..]);
         }
 
 
