@@ -172,7 +172,7 @@ struct Image {
 
 fn load_image() -> Image
 {
-    if false {
+    if true {
         let width: i32 = 4096;
         let height: i32 = 8192;
         return Image { data: vec![0; (width * height * 4) as usize], width, height }
@@ -199,8 +199,6 @@ fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format:
 
     gl.bind_texture(target, texture);
 
-
-
     let level = 0;
     let border = 0;
 
@@ -217,9 +215,7 @@ fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format:
         gl.pixel_store_i(gl::UNPACK_ROW_LENGTH, 0);
     }
 
-    let zero = vec![0; image.data.len()];
-
-    gl.tex_image_2d(target, level, internal_format as i32, image.width, image.height, border, src_format, src_type, if false { Some(&zero[..]) } else { Some(&zero[..]) });
+    gl.tex_image_2d(target, level, internal_format as i32, image.width, image.height, border, src_format, src_type, if options.pbo { None } else { Some(&image.data[..]) });
 
     // Rectangle textures has its limitations compared to using POT textures, for example,
     // Rectangle textures can't use mipmap filtering
@@ -233,7 +229,7 @@ fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format:
         let id = gl.gen_buffers(1)[0];
         // WebRender on Mac uses DYNAMIC_DRAW
         gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, id);
-        gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * 4) as _, zero[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
+        gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * 4) as _, image.data[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
         gl.tex_sub_image_2d_pbo(
             target,
             level,
