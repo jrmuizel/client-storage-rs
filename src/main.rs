@@ -5,20 +5,24 @@ extern crate euclid;
 
 use euclid::{Transform3D, Vector3D};
 
+use gleam::gl::Gl;
 use gleam::gl;
 use glutin::GlContext;
 
 use std::rc::Rc;
 
 use gleam::gl::GLuint;
+use gleam::gl::ErrorCheckingGl;
 
 struct Options {
     pbo: bool,
     client_storage: bool,
+    texture_array: bool,
+    texture_storage: bool,
 }
 
 
-fn init_shader_program(gl: &mut gl::Gl, vs_source: &[u8], fs_source: &[u8]) -> gl::GLuint {
+fn init_shader_program(gl: &Rc<Gl>, vs_source: &[u8], fs_source: &[u8]) -> gl::GLuint {
     let vertex_shader = load_shader(gl, gl::VERTEX_SHADER, vs_source);
     let fragment_shader = load_shader(gl, gl::FRAGMENT_SHADER, fs_source);
     let shader_program = gl.create_program();
@@ -43,7 +47,7 @@ struct Buffers {
     indices: GLuint
 }
 
-fn init_buffers(gl: &mut gl::Gl, texture_rectangle: bool, texture_width: i32, texture_height: i32) -> Buffers {
+fn init_buffers(gl: &Rc<gl::Gl>, texture_rectangle: bool, texture_width: i32, texture_height: i32) -> Buffers {
     let position_buffer = gl.gen_buffers(1)[0];
 
     gl.bind_buffer(gl::ARRAY_BUFFER, position_buffer);
@@ -170,6 +174,46 @@ struct Image {
     height: i32
 }
 
+fn rgba_to_bgra(buf: &mut [u8]) {
+    assert!(buf.len() % 4 == 0);
+    let mut i = 0;
+    while i < buf.len() {
+        let r = buf[i];
+        let g = buf[i+1];
+        let b = buf[i+2];
+        let a = buf[i+3];
+        buf[i] = b;
+        buf[i+1] = g;
+        buf[i+2] = r;
+        buf[i+3] = a;
+        i += 4;
+    }
+}
+
+fn make_red(buf: &mut [u8]) {
+    assert!(buf.len() % 4 == 0);
+    let mut i = 0;
+    while i < buf.len() {
+        buf[i] = 0;
+        buf[i+1] = 0;
+        buf[i+2] = 0xff;
+        buf[i+3] = 0xff;
+        i += 4;
+    }
+}
+
+fn make_yellow(buf: &mut [u8]) {
+    assert!(buf.len() % 4 == 0);
+    let mut i = 0;
+    while i < buf.len() {
+        buf[i] = 0;
+        buf[i+1] = 0xff;
+        buf[i+2] = 0xff;
+        buf[i+3] = 0xff;
+        i += 4;
+    }
+}
+
 fn load_image() -> Image
 {
     if true {
@@ -185,6 +229,11 @@ fn load_image() -> Image
     // The default options
     reader.next_frame(&mut buf).unwrap();
 
+    rgba_to_bgra(&mut buf);
+
+    //make_red(&mut buf);
+    //make_yellow(&mut buf);
+
     Image { data: buf, width: info.width as i32, height: info.height as i32}
 }
 
@@ -194,7 +243,7 @@ struct Texture {
 }
 
 
-fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format: GLuint, src_format: GLuint, src_type: GLuint, options: &Options) -> Texture {
+fn load_texture(gl: &Rc<gl::Gl>, image: &Image, target: GLuint, internal_format: GLuint, src_format: GLuint, src_type: GLuint, options: &Options) -> Texture {
     let texture = gl.gen_textures(1)[0];
 
     gl.bind_texture(target, texture);
@@ -215,7 +264,19 @@ fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format:
         gl.pixel_store_i(gl::UNPACK_ROW_LENGTH, 0);
     }
 
-    gl.tex_image_2d(target, level, internal_format as i32, image.width, image.height, border, src_format, src_type, if options.pbo { None } else { Some(&image.data[..]) });
+    if options.texture_array {
+        if options.texture_storage {
+            gl.tex_storage_3d(target, 1, internal_format, image.width as i32, image.height as i32, 1);
+        } else {
+            gl.tex_image_3d(target, level, internal_format as i32, image.width, image.height, 1, border, src_format, src_type, if options.pbo { None } else { Some(&image.data[..]) });
+        }
+    } else {
+        if options.texture_storage {
+            gl.tex_storage_2d(target, 1, internal_format, image.width as i32, image.height as i32);
+        } else {
+            gl.tex_image_2d(target, level, internal_format as i32, image.width, image.height, border, src_format, src_type, if options.pbo { None } else { Some(&image.data[..]) });
+        }
+    }
 
     // Rectangle textures has its limitations compared to using POT textures, for example,
     // Rectangle textures can't use mipmap filtering
@@ -230,17 +291,34 @@ fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format:
         // WebRender on Mac uses DYNAMIC_DRAW
         gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, id);
         gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * 4) as _, image.data[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
-        gl.tex_sub_image_2d_pbo(
-            target,
-            level,
-            0,
-            0,
-            image.width,
-            image.height,
-            src_format,
-            src_type,
-            0,
-        );
+
+        if options.texture_array {
+            gl.tex_sub_image_3d_pbo(
+                target,
+                level,
+                0,
+                0,
+                0,
+                image.width,
+                image.height,
+                1,
+                src_format,
+                src_type,
+                0,
+            );
+        } else {
+            gl.tex_sub_image_2d_pbo(
+                target,
+                level,
+                0,
+                0,
+                image.width,
+                image.height,
+                src_format,
+                src_type,
+                0,
+            );
+        }
         gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, 0);
         Some(id)
     } else {
@@ -250,7 +328,7 @@ fn load_texture(gl: &mut gl::Gl, image: &Image, target: GLuint, internal_format:
 }
 
 
-fn load_shader(gl: &mut gl::Gl, shader_type: gl::GLenum, source: &[u8]) -> gl::GLuint {
+fn load_shader(gl: &Rc<Gl>, shader_type: gl::GLenum, source: &[u8]) -> gl::GLuint {
     let shader = gl.create_shader(shader_type);
     gl.shader_source(shader, &[source]);
     gl.compile_shader(shader);
@@ -281,13 +359,15 @@ fn main() {
         gl_window.make_current().unwrap();
     }
 
+    let options = Options { pbo: false, client_storage: true, texture_array: false, texture_storage: true};
+
 
     let texture_rectangle = true;
-    let apple_format = true;
-    let client_storage = true;
+    let apple_format = true; // on Intel it looks like we don't need this particular format
 
     let texture_target = if texture_rectangle { gl::TEXTURE_RECTANGLE_ARB } else { gl::TEXTURE_2D };
-    let texture_internal_format = gl::RGBA;
+    let texture_target = if options.texture_array { gl::TEXTURE_2D_ARRAY} else { texture_target };
+    let texture_internal_format = gl::RGBA8;
     let texture_src_format = if apple_format { gl::BGRA } else { gl::RGBA };
     let texture_src_type = if apple_format { gl::UNSIGNED_INT_8_8_8_8_REV } else { gl::UNSIGNED_BYTE };
 
@@ -305,35 +385,29 @@ fn main() {
         v_texture_coord = a_texture_coord;
     }";
 
-    let fs_source = if texture_rectangle {
-        b"
-    #version 140
-
-    in vec2 v_texture_coord;
-    uniform sampler2DRect u_sampler;
-    out vec4 fragment_color;
-    void main(void) {
-        fragment_color = texture(u_sampler, v_texture_coord);
-    }
-    "
+    let (sampler, coord) = if texture_rectangle {
+        ("sampler2DRect", "v_texture_coord")
+    } else if options.texture_array {
+        ("sampler2DArray", "vec3(v_texture_coord, 0.0)")
     } else {
-            b"
+        ("sampler2D", "v_texture_coord")
+    };
+    let fs_source = format!("
     #version 140
 
     in vec2 v_texture_coord;
-    uniform sampler2D     u_sampler;
+    uniform {} u_sampler;
     out vec4 fragment_color;
-    void main(void) {
-        fragment_color = texture(u_sampler, v_texture_coord);
-    }
-    "
-    };
+    void main(void) {{
+        fragment_color = texture(u_sampler, {});
+    }}
+    ", sampler, coord).into_bytes();
 
 
     let mut glc = unsafe { gl::GlFns::load_with(|symbol| gl_window.get_proc_address(symbol) as *const _) };
-    let gl = Rc::get_mut(&mut glc).unwrap();
+    let gl = ErrorCheckingGl::wrap(glc);// Rc::get_mut(&mut glc).unwrap();
 
-    let shader_program = init_shader_program(gl, vs_source, fs_source);
+    let shader_program = init_shader_program(&gl, vs_source, &fs_source);
 
 
     let vertex_position = gl.get_attrib_location(shader_program, "a_vertex_position");
@@ -345,14 +419,10 @@ fn main() {
 
 
     let image = load_image();
-    let buffers = init_buffers(gl, texture_rectangle, image.width, image.height);
+    let buffers = init_buffers(&gl, texture_rectangle, image.width, image.height);
+    
 
-
-
-
-    let options = Options { pbo: false, client_storage: true};
-
-    let texture = load_texture(gl, &image,
+    let texture = load_texture(&gl, &image,
                                texture_target,
                                texture_internal_format,
                                texture_src_format,
@@ -386,25 +456,50 @@ fn main() {
             if options.pbo {
                 let id = texture.pbo.unwrap();
                 gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, id);
-                gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * 4) as _, image.data[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
-                gl.tex_sub_image_2d_pbo(
-                    texture_target,
-                    level,
-                    0,
-                    0,
-                    image.width,
-                    image.height,
-                    texture_src_format,
-                    texture_src_type,
-                    0,
-                );
+                if true {
+                    //gl.buffer_sub_data_untyped(gl::PIXEL_UNPACK_BUFFER, 0, (image.width * image.height * 4) as _, image.data[..].as_ptr() as *const libc::c_void);
+                    gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * 4) as _, image.data[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
+
+                } else {
+                    //gl.map_buffer(gl::PIXEL_UNPACK_BUFFER, gl::WRITE_ONLY);
+                }
+                if options.texture_array {
+                    gl.tex_sub_image_3d_pbo(
+                        texture_target,
+                        level,
+                        0,
+                        0,
+                        0,
+                        image.width,
+                        image.height,
+                        1,
+                        texture_src_format,
+                        texture_src_type,
+                        0,
+                    );
+                } else {
+                    gl.tex_sub_image_2d_pbo(
+                        texture_target,
+                        level,
+                        0,
+                        0,
+                        image.width,
+                        image.height,
+                        texture_src_format,
+                        texture_src_type,
+                        0,
+                    );
+                }
                 gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, 0);
             } else {
-                if client_storage {
+                if options.client_storage {
                     //gl.tex_parameter_i(texture_target, gl::TEXTURE_STORAGE_HINT_APPLE, gl::STORAGE_CACHED_APPLE as gl::GLint);
                     //gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
                 }
                 gl.tex_sub_image_2d(texture_target, level, 0, 0, image.width, image.height, texture_src_format, texture_src_type, &image.data[..]);
+                // sub image uploads are still fast as long as the memory is in the same place
+                //gl.tex_sub_image_2d(texture_target, level, 0, 256, image.width, 4096, texture_src_format, texture_src_type, &image.data[image.width as usize *4*256..image.width as usize *4*4096]);
+
             }
         }
 
