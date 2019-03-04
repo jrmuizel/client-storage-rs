@@ -231,14 +231,25 @@ fn paint_square2(image: &mut Image) {
 
 }
 
+fn bpp(format: GLuint) -> i32 {
+    match format {
+        gl::UNSIGNED_INT_8_8_8_8_REV => 4,
+        gl::UNSIGNED_BYTE => 4,
+        gl::FLOAT => 16,
+        gl::INT => 16,
+        gl::UNSIGNED_INT => 16,
+        _ => panic!()
+    }
+}
 
 
-fn load_image() -> Image
+
+fn load_image(format: GLuint) -> Image
 {
     if true {
         let width: i32 = 4096;
         let height: i32 = 8192;
-        return Image { data: vec![0; (width * height * 4) as usize], width, height }
+        return Image { data: vec![0; (width * height * bpp(format)) as usize], width, height }
     }
     let decoder = png::Decoder::new(std::fs::File::open("cubetexture.png").unwrap());
     let (info, mut reader) = decoder.read_info().unwrap();
@@ -317,7 +328,7 @@ fn load_texture(gl: &Rc<gl::Gl>, image: &Image, target: GLuint, internal_format:
         let id = gl.gen_buffers(1)[0];
         // WebRender on Mac uses DYNAMIC_DRAW
         gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, id);
-        gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * 4) as _, image.data[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
+        gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * bpp(src_type)) as _, image.data[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
 
         if options.texture_array {
             gl.tex_sub_image_3d_pbo(
@@ -386,16 +397,29 @@ fn main() {
         gl_window.make_current().unwrap();
     }
 
-    let options = Options { pbo: true, client_storage: false, texture_array: true, texture_storage: true, swizzle: true };
+    let options = Options { pbo: true, client_storage: false, texture_array: true, texture_storage: true, swizzle: false };
 
     let texture_rectangle = false;
     let apple_format = false; // on Intel it looks like we don't need this particular format
 
     let texture_target = if texture_rectangle { gl::TEXTURE_RECTANGLE_ARB } else { gl::TEXTURE_2D };
     let texture_target = if options.texture_array { gl::TEXTURE_2D_ARRAY} else { texture_target };
-    let texture_internal_format = gl::RGBA8;
-    let texture_src_format = if apple_format { gl::BGRA } else { gl::RGBA };
-    let texture_src_type = if apple_format { gl::UNSIGNED_INT_8_8_8_8_REV } else { gl::UNSIGNED_BYTE };
+
+    let texture_internal_format = gl::RGBA32UI;
+    //let texture_internal_format = gl::RGBA32F;
+    //let texture_internal_format = gl::RGBA8;
+
+    let mut texture_src_format = if apple_format { gl::BGRA } else { gl::RGBA };
+    let mut texture_src_type = if apple_format { gl::UNSIGNED_INT_8_8_8_8_REV } else { gl::UNSIGNED_BYTE };
+
+    // adjust type and format to match internal format
+    if texture_internal_format == gl::RGBA32UI {
+        texture_src_type = gl::UNSIGNED_INT;
+        texture_src_format = gl::RGBA_INTEGER;
+    } else if texture_internal_format == gl::RGBA32F {
+        texture_src_format = gl::RGBA;
+        texture_src_type = gl::FLOAT;
+    }
 
 
     let vs_source = b"
@@ -444,7 +468,7 @@ fn main() {
     let u_sampler = gl.get_uniform_location(shader_program, "u_sampler");
 
 
-    let mut image = load_image();
+    let mut image = load_image(texture_src_type);
     let buffers = init_buffers(&gl, texture_rectangle, image.width, image.height);
 
 
@@ -484,7 +508,7 @@ fn main() {
                 gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, id);
                 if true {
                     //gl.buffer_sub_data_untyped(gl::PIXEL_UNPACK_BUFFER, 0, (image.width * image.height * 4) as _, image.data[..].as_ptr() as *const libc::c_void);
-                    gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * 4) as _, image.data[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
+                    gl.buffer_data_untyped(gl::PIXEL_UNPACK_BUFFER, (image.width * image.height * bpp(texture_src_type)) as _, image.data[..].as_ptr() as *const libc::c_void, gl::DYNAMIC_DRAW);
 
                 } else {
                     //gl.map_buffer(gl::PIXEL_UNPACK_BUFFER, gl::WRITE_ONLY);
