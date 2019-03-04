@@ -19,6 +19,7 @@ struct Options {
     client_storage: bool,
     texture_array: bool,
     texture_storage: bool,
+    swizzle: bool,
 }
 
 
@@ -190,13 +191,13 @@ fn rgba_to_bgra(buf: &mut [u8]) {
     }
 }
 
-fn make_red(buf: &mut [u8]) {
+fn make_blue(buf: &mut [u8]) {
     assert!(buf.len() % 4 == 0);
     let mut i = 0;
     while i < buf.len() {
-        buf[i] = 0;
+        buf[i] = 0xff;
         buf[i+1] = 0;
-        buf[i+2] = 0xff;
+        buf[i+2] = 0;
         buf[i+3] = 0xff;
         i += 4;
     }
@@ -213,6 +214,24 @@ fn make_yellow(buf: &mut [u8]) {
         i += 4;
     }
 }
+
+fn paint_square(image: &mut Image) {
+    let width = image.width as usize;
+    for i in 1024..2048 {
+        make_yellow(&mut image.data[i*width..(i*width + 512)]);
+    }
+
+}
+
+fn paint_square2(image: &mut Image) {
+    let width = image.width as usize;
+    for i in 1024..2048 {
+        make_blue(&mut image.data[i*width..(i*width + 512)]);
+    }
+
+}
+
+
 
 fn load_image() -> Image
 {
@@ -285,6 +304,14 @@ fn load_texture(gl: &Rc<gl::Gl>, image: &Image, target: GLuint, internal_format:
     // Rectangle textures can't use the GL_REPEAT warp mode
     gl.tex_parameter_i(target, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::GLint);
     gl.tex_parameter_i(target, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::GLint);
+    if options.swizzle {
+        //let components = [gl::RED, gl::GREEN, gl::BLUE, gl::ALPHA];
+        let components = [gl::BLUE, gl::GREEN, gl::RED, gl::ALPHA];
+        gl.tex_parameter_i(target, gl::TEXTURE_SWIZZLE_R, components[0] as i32);
+        gl.tex_parameter_i(target, gl::TEXTURE_SWIZZLE_G, components[1] as i32);
+        gl.tex_parameter_i(target, gl::TEXTURE_SWIZZLE_B, components[2] as i32);
+        gl.tex_parameter_i(target, gl::TEXTURE_SWIZZLE_A, components[3] as i32);
+    }
 
     let pbo = if options.pbo {
         let id = gl.gen_buffers(1)[0];
@@ -359,11 +386,10 @@ fn main() {
         gl_window.make_current().unwrap();
     }
 
-    let options = Options { pbo: false, client_storage: true, texture_array: false, texture_storage: true};
+    let options = Options { pbo: true, client_storage: false, texture_array: true, texture_storage: true, swizzle: true };
 
-
-    let texture_rectangle = true;
-    let apple_format = true; // on Intel it looks like we don't need this particular format
+    let texture_rectangle = false;
+    let apple_format = false; // on Intel it looks like we don't need this particular format
 
     let texture_target = if texture_rectangle { gl::TEXTURE_RECTANGLE_ARB } else { gl::TEXTURE_2D };
     let texture_target = if options.texture_array { gl::TEXTURE_2D_ARRAY} else { texture_target };
@@ -418,9 +444,9 @@ fn main() {
     let u_sampler = gl.get_uniform_location(shader_program, "u_sampler");
 
 
-    let image = load_image();
+    let mut image = load_image();
     let buffers = init_buffers(&gl, texture_rectangle, image.width, image.height);
-    
+
 
     let texture = load_texture(&gl, &image,
                                texture_target,
@@ -593,8 +619,22 @@ fn main() {
             let offset = 0;
             gl.draw_elements(gl::TRIANGLES, vertex_count, ty, offset);
         }
-
+        //paint_square(&mut image);
         gl_window.swap_buffers().unwrap();
+        /*
+        let mut count = 0;
+        gl.finish_object_apple(gl::TEXTURE, texture.id);
+        while gl.test_object_apple(gl::TEXTURE, texture.id) == 0 {
+            count += 1
+        }
+                println!("test {}", count);
+
+        */
+        //paint_square2(&mut image);
+
+
+
+
         cube_rotation += 0.1;
     }
 }
