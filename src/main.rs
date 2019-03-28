@@ -2,6 +2,7 @@ extern crate gleam;
 extern crate glutin;
 extern crate libc;
 extern crate euclid;
+extern crate core_foundation;
 
 use euclid::{Transform3D, Vector3D};
 
@@ -13,6 +14,7 @@ use std::rc::Rc;
 
 use gleam::gl::GLuint;
 use gleam::gl::ErrorCheckingGl;
+use core_foundation::dictionary::CFMutableDictionary;
 
 struct Options {
     pbo: bool,
@@ -377,6 +379,16 @@ fn load_shader(gl: &Rc<Gl>, shader_type: gl::GLenum, source: &[u8]) -> gl::GLuin
         panic!();
     }
     return shader;
+}
+
+fn allow_gpu_switching() {
+    use core_foundation::string::CFString;
+    use core_foundation::base::TCFType;
+    use core_foundation::boolean::CFBoolean;
+
+    let b = core_foundation::bundle::CFBundle::main_bundle();
+    let mut i : CFMutableDictionary<_, _> = unsafe { std::mem::transmute(b.info_dictionary()) };
+    i.set(&CFString::new("NSSupportsAutomaticGraphicsSwitching"), &CFBoolean::true_value().into_CFType());
 }
 
 fn main() {
