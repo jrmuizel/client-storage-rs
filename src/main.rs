@@ -397,17 +397,17 @@ fn main() {
         gl_window.make_current().unwrap();
     }
 
-    let options = Options { pbo: true, client_storage: false, texture_array: true, texture_storage: true, swizzle: false };
+    let options = Options { pbo: false, client_storage: true, texture_array: false, texture_storage: false, swizzle: false };
 
-    let texture_rectangle = false;
-    let apple_format = false; // on Intel it looks like we don't need this particular format
+    let texture_rectangle = true;
+    let apple_format = true; // on Intel it looks like we don't need this particular format
 
     let texture_target = if texture_rectangle { gl::TEXTURE_RECTANGLE_ARB } else { gl::TEXTURE_2D };
     let texture_target = if options.texture_array { gl::TEXTURE_2D_ARRAY} else { texture_target };
 
-    let texture_internal_format = gl::RGBA32UI;
+    //let texture_internal_format = gl::RGBA32UI;
     //let texture_internal_format = gl::RGBA32F;
-    //let texture_internal_format = gl::RGBA8;
+    let texture_internal_format = gl::RGBA8;
 
     let mut texture_src_format = if apple_format { gl::BGRA } else { gl::RGBA };
     let mut texture_src_type = if apple_format { gl::UNSIGNED_INT_8_8_8_8_REV } else { gl::UNSIGNED_BYTE };
