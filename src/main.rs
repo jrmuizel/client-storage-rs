@@ -388,10 +388,13 @@ fn allow_gpu_switching() {
 
     let b = core_foundation::bundle::CFBundle::main_bundle();
     let mut i : CFMutableDictionary<_, _> = unsafe { std::mem::transmute(b.info_dictionary()) };
-    i.set(&CFString::new("NSSupportsAutomaticGraphicsSwitching"), &CFBoolean::true_value().into_CFType());
+    i.set(CFString::new("NSSupportsAutomaticGraphicsSwitching"), CFBoolean::true_value().into_CFType());
 }
 
 fn main() {
+
+    allow_gpu_switching();
+
     let mut events_loop = glutin::EventsLoop::new();
     let window = glutin::WindowBuilder::new()
         .with_title("Hello, world!")
