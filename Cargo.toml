@@ -4,7 +4,7 @@ name = "client-storage-rs"
 version = "0.1.0"
 
 [dependencies]
-core-foundation = "0.6.3"
+core-foundation = "0.6.4"
 euclid = "0.19.5"
 gleam = "0.6.8"
 glutin = "0.10.0"

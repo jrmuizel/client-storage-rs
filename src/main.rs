@@ -387,7 +387,7 @@ fn allow_gpu_switching() {
     use core_foundation::boolean::CFBoolean;
 
     let b = core_foundation::bundle::CFBundle::main_bundle();
-    let mut i : CFMutableDictionary<_, _> = unsafe { std::mem::transmute(b.info_dictionary()) };
+    let mut i = unsafe { b.info_dictionary().to_mutable() };
     i.set(CFString::new("NSSupportsAutomaticGraphicsSwitching"), CFBoolean::true_value().into_CFType());
 }
 
