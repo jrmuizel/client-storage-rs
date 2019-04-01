@@ -16,6 +16,24 @@ use gleam::gl::GLuint;
 use gleam::gl::ErrorCheckingGl;
 use core_foundation::dictionary::CFMutableDictionary;
 
+
+
+/* It was already known that the efficiency gains from client storage only materialize if you
+   follow certain restrictions:
+   - The textures need to use the TEXTURE_RECTANGLE_ARB texture target.
+   - The textures' format, internalFormat and type need to be chosen from a small list of
+     supported configurations. Unsupported configurations will trigger format conversions on the CPU.
+   - The GL_TEXTURE_STORAGE_HINT_APPLE may need to be set to shared or cached. -
+     glTextureRangeAPPLE may or may not make a difference.
+
+ It now appears that the stride alignment is another requirement: When uploading textures which
+ otherwise comply with the above requirements, the Intel driver will still make copies using the
+ CPU if the texture's stride is not 32-byte aligned. These CPU copies are reflected in a high CPU
+ usage (as observed in Activity Monitor) and they show up in profiles as time spent inside
+ _platform_memmove under glrUpdateTexture.
+
+ */
+
 struct Options {
     pbo: bool,
     client_storage: bool,
