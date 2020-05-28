@@ -267,6 +267,7 @@ fn bpp(format: GLuint) -> i32 {
 fn load_image(format: GLuint) -> Image
 {
     if true {
+        // stride needs to be 32-byte aligned to go fast with client storage
         let width: i32 = 4096;
         let height: i32 = 8192;
         return Image { data: vec![0; (width * height * bpp(format)) as usize], width, height }
