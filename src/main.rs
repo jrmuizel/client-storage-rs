@@ -8,14 +8,14 @@ use euclid::{Transform3D, Vector3D};
 
 use gleam::gl::Gl;
 use gleam::gl;
-use glutin::GlContext;
+
+use glutin::event::{Event, WindowEvent};
+use glutin::event_loop::ControlFlow;
 
 use std::rc::Rc;
 
 use gleam::gl::GLuint;
 use gleam::gl::ErrorCheckingGl;
-use core_foundation::dictionary::CFMutableDictionary;
-
 
 
 /* It was already known that the efficiency gains from client storage only materialize if you
@@ -43,7 +43,7 @@ struct Options {
 }
 
 
-fn init_shader_program(gl: &Rc<Gl>, vs_source: &[u8], fs_source: &[u8]) -> gl::GLuint {
+fn init_shader_program(gl: &Rc<dyn Gl>, vs_source: &[u8], fs_source: &[u8]) -> gl::GLuint {
     let vertex_shader = load_shader(gl, gl::VERTEX_SHADER, vs_source);
     let fragment_shader = load_shader(gl, gl::FRAGMENT_SHADER, fs_source);
     let shader_program = gl.create_program();
@@ -68,7 +68,7 @@ struct Buffers {
     indices: GLuint
 }
 
-fn init_buffers(gl: &Rc<gl::Gl>, texture_rectangle: bool, texture_width: i32, texture_height: i32) -> Buffers {
+fn init_buffers(gl: &Rc<dyn gl::Gl>, texture_rectangle: bool, texture_width: i32, texture_height: i32) -> Buffers {
     let position_buffer = gl.gen_buffers(1)[0];
 
     gl.bind_buffer(gl::ARRAY_BUFFER, position_buffer);
@@ -293,7 +293,7 @@ struct Texture {
 }
 
 
-fn load_texture(gl: &Rc<gl::Gl>, image: &Image, target: GLuint, internal_format: GLuint, src_format: GLuint, src_type: GLuint, options: &Options) -> Texture {
+fn load_texture(gl: &Rc<dyn gl::Gl>, image: &Image, target: GLuint, internal_format: GLuint, src_format: GLuint, src_type: GLuint, options: &Options) -> Texture {
     let texture = gl.gen_textures(1)[0];
 
     gl.bind_texture(target, texture);
@@ -305,7 +305,7 @@ fn load_texture(gl: &Rc<gl::Gl>, image: &Image, target: GLuint, internal_format:
         //gl.texture_range_apple(target, &image.data[..]);
 
         // both of these seem to work ok on Intel
-        let storage = gl::STORAGE_SHARED_APPLE;
+        // let storage = gl::STORAGE_SHARED_APPLE;
         let storage = gl::STORAGE_CACHED_APPLE;
         gl.tex_parameter_i(target, gl::TEXTURE_STORAGE_HINT_APPLE, storage as gl::GLint);
         gl.pixel_store_i(gl::UNPACK_CLIENT_STORAGE_APPLE, true as gl::GLint);
@@ -386,7 +386,7 @@ fn load_texture(gl: &Rc<gl::Gl>, image: &Image, target: GLuint, internal_format:
 }
 
 
-fn load_shader(gl: &Rc<Gl>, shader_type: gl::GLenum, source: &[u8]) -> gl::GLuint {
+fn load_shader(gl: &Rc<dyn Gl>, shader_type: gl::GLenum, source: &[u8]) -> gl::GLuint {
     let shader = gl.create_shader(shader_type);
     gl.shader_source(shader, &[source]);
     gl.compile_shader(shader);
@@ -413,22 +413,21 @@ fn main() {
 
     allow_gpu_switching();
 
-    let mut events_loop = glutin::EventsLoop::new();
-    let window = glutin::WindowBuilder::new()
+    let events_loop = glutin::event_loop::EventLoop::new();
+    let window_builder = glutin::window::WindowBuilder::new()
         .with_title("Hello, world!")
-        .with_dimensions(1024, 768);
-    let context = glutin::ContextBuilder::new()
+        .with_inner_size(glutin::dpi::LogicalSize::new(1024.0, 768.0));
+
+    let gl_window = glutin::ContextBuilder::new()
         .with_vsync(true)
         .with_gl(glutin::GlRequest::GlThenGles {
-        opengl_version: (3, 2),
-        opengles_version: (3, 0),
-    });
+            opengl_version: (3, 2),
+            opengles_version: (3, 0),
+        })
+        .build_windowed(window_builder, &events_loop)
+        .unwrap();
 
-    let gl_window = glutin::GlWindow::new(window, context, &events_loop).unwrap();
-
-    unsafe {
-        gl_window.make_current().unwrap();
-    }
+    let gl_window = unsafe { gl_window.make_current().unwrap() };
 
     let options = Options { pbo: false, client_storage: true, texture_array: false, texture_storage: false, swizzle: false };
 
@@ -487,7 +486,7 @@ fn main() {
     ", sampler, coord).into_bytes();
 
 
-    let mut glc = unsafe { gl::GlFns::load_with(|symbol| gl_window.get_proc_address(symbol) as *const _) };
+    let glc = unsafe { gl::GlFns::load_with(|symbol| gl_window.get_proc_address(symbol) as *const _) };
     let gl = ErrorCheckingGl::wrap(glc);// Rc::get_mut(&mut glc).unwrap();
 
     let shader_program = init_shader_program(&gl, vs_source, &fs_source);
@@ -516,20 +515,22 @@ fn main() {
     gl.bind_vertex_array(vao);
 
 
-    let mut running = true;
     let mut cube_rotation: f32 = 0.;
-    while running {
-        events_loop.poll_events(|event| {
-            match event {
-                glutin::Event::WindowEvent{ event, .. } => match event {
-                    glutin::WindowEvent::Closed => running = false,
-                    glutin::WindowEvent::Resized(w, h) => gl_window.resize(w, h),
-                    _ => ()
-                },
-                _ => ()
-            }
-        });
 
+    events_loop.run(move |event, _, control_flow| {
+        match event {
+            Event::LoopDestroyed => return,
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::Resized(physical_size) => {
+                    gl_window.resize(physical_size)
+                }
+                WindowEvent::CloseRequested => {
+                    *control_flow = ControlFlow::Exit
+                }
+                _ => (),
+            },
+            _ => ()
+        }
 
         // Bind the texture to texture unit 0
         gl.bind_texture(texture_target, texture.id);
@@ -689,9 +690,6 @@ fn main() {
         */
         //paint_square2(&mut image);
 
-
-
-
         cube_rotation += 0.1;
-    }
+    });
 }
